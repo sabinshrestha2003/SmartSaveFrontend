@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
-import { getUserGroups, getBillSplits, getSettlements, addSettlement } from '../utils/api';
+import { getUserGroups, getBillSplits, getSettlements, getGroup, addSettlement } from '../utils/api';
 import { useAuth } from './AuthContext';
 import { displayNotification } from '../utils/notifications';
 
@@ -9,6 +9,7 @@ export const BillSplittingProvider = ({ children }) => {
   const [groups, setGroups] = useState([]);
   const [billSplits, setBillSplits] = useState([]);
   const [settlements, setSettlements] = useState([]);
+  const [invalidGroups, setInvalidGroups] = useState(new Set());
   const [stats, setStats] = useState({
     totalOwed: 0,
     totalOwing: 0,
@@ -65,6 +66,37 @@ export const BillSplittingProvider = ({ children }) => {
     };
   };
 
+  const validateGroup = async (groupId) => {
+    if (invalidGroups.has(String(groupId))) {
+      console.log(`Skipping validation for known invalid group ID: ${groupId}`);
+      return null;
+    }
+
+    try {
+      console.log(`Validating group ID: ${groupId}`);
+      const response = await getGroup(groupId);
+      console.log(`Validation response for group ${groupId}:`, response.data.group);
+      return response.data.group;
+    } catch (err) {
+      console.error(`Error validating group ${groupId}:`, err.response?.data || err.message);
+      if (err.response?.status === 404) {
+        console.log(`Group ${groupId} not found, removing from state`);
+        setInvalidGroups(prev => {
+          const updated = new Set(prev);
+          updated.add(String(groupId));
+          console.log(`Updated invalidGroups:`, Array.from(updated));
+          return updated;
+        });
+        setGroups(prev => {
+          const updatedGroups = prev.filter(g => String(g.id) !== String(groupId));
+          console.log(`Updated groups after removing ${groupId}:`, updatedGroups);
+          return updatedGroups;
+        });
+      }
+      return null;
+    }
+  };
+
   const fetchBillSplittingData = async () => {
     if (!user || authLoading) {
       console.log('No user or auth loading, skipping fetchBillSplittingData');
@@ -74,7 +106,7 @@ export const BillSplittingProvider = ({ children }) => {
     setError(null);
 
     try {
-      // Make API calls concurrently but handle failures individually
+      console.log('Fetching bill splitting data');
       const results = await Promise.allSettled([
         getUserGroups(),
         getBillSplits(),
@@ -86,15 +118,17 @@ export const BillSplittingProvider = ({ children }) => {
       let settlementsData = [];
       let errors = [];
 
-      // Process each result
       results.forEach((result, index) => {
         if (result.status === 'fulfilled') {
           if (index === 0) {
             groupsData = result.value.data.groups || [];
+            console.log('Fetched groups:', groupsData);
           } else if (index === 1) {
             billSplitsData = result.value.data.bill_splits || [];
+            console.log('Fetched bill splits:', billSplitsData);
           } else if (index === 2) {
             settlementsData = result.value.data.settlements || [];
+            console.log('Fetched settlements:', settlementsData);
           }
         } else {
           const errorMessage = result.reason.response?.data?.error || result.reason.message;
@@ -103,8 +137,22 @@ export const BillSplittingProvider = ({ children }) => {
         }
       });
 
-      // Update state with successful data
-      setGroups(groupsData);
+      // Validate all groups to filter out invalid ones
+      const validatedGroups = [];
+      for (const group of groupsData) {
+        if (invalidGroups.has(String(group.id))) {
+          console.log(`Skipping validation for known invalid group ID: ${group.id}`);
+          continue;
+        }
+        const validatedGroup = await validateGroup(group.id);
+        if (validatedGroup) {
+          validatedGroups.push(validatedGroup);
+        }
+      }
+      console.log('Validated groups before setting state:', validatedGroups);
+
+      validatedGroups.sort((a, b) => Number(a.id) - Number(b.id));
+      setGroups(validatedGroups);
       setBillSplits(billSplitsData);
       setSettlements(settlementsData);
 
@@ -114,7 +162,6 @@ export const BillSplittingProvider = ({ children }) => {
         console.log('Updated stats:', newStats);
       }
 
-      // Set error if any API call failed
       if (errors.length > 0) {
         setError(errors.join('; '));
       }
@@ -127,7 +174,28 @@ export const BillSplittingProvider = ({ children }) => {
       setStats({ totalOwed: 0, totalOwing: 0, netBalance: 0 });
     } finally {
       setLoading(false);
+      console.log('Finished fetching bill splitting data, current groups:', groups);
     }
+  };
+
+  const removeGroup = (groupId) => {
+    console.log(`Removing group ${groupId} from context state`);
+    setInvalidGroups(prev => {
+      const updated = new Set(prev);
+      updated.add(String(groupId));
+      console.log(`Updated invalidGroups after removal:`, Array.from(updated));
+      return updated;
+    });
+    setGroups(prev => {
+      const updatedGroups = prev.filter(g => String(g.id) !== String(groupId));
+      console.log(`Updated groups after removing ${groupId}:`, updatedGroups);
+      return updatedGroups;
+    });
+    setBillSplits(prev => {
+      const updatedSplits = prev.filter(b => String(b.group_id) !== String(groupId));
+      console.log(`Updated bill splits after removing group ${groupId}:`, updatedSplits);
+      return updatedSplits;
+    });
   };
 
   useEffect(() => {
@@ -147,7 +215,14 @@ export const BillSplittingProvider = ({ children }) => {
       console.log('No user, skipping refreshBillSplitting');
       return;
     }
+    console.log('Starting refreshBillSplitting, clearing stale state');
+    setGroups([]);
+    setBillSplits([]);
+    setSettlements([]);
+    setStats({ totalOwed: 0, totalOwing: 0, netBalance: 0 });
+    setInvalidGroups(new Set());
     await fetchBillSplittingData();
+    console.log('Completed refreshBillSplitting');
   };
 
   const triggerNotification = async (title, body, data = {}, userId = null) => {
@@ -164,56 +239,23 @@ export const BillSplittingProvider = ({ children }) => {
     }
   };
 
-  const addSettlement = async (settlement) => {
+  const addNewSettlement = async (settlementData) => {
     if (!user) {
       console.error('Cannot add settlement: No user logged in');
-      throw new Error('User not logged in');
+      throw new Error('User not authenticated');
     }
     try {
-      const response = await addSettlement(settlement);
-      const newSettlement = response.data.settlement || settlement;
-
+      const response = await addSettlement(settlementData);
+      const newSettlement = response.data.settlement;
       setSettlements(prev => [...prev, newSettlement]);
-
-      const notificationData = {
-        screen: 'SplitDetails',
-        params: { splitId: settlement.bill_split_id },
-      };
-      await triggerNotification(
-        'Settlement Added',
-        `You settled $${newSettlement.amount.toFixed(2)} for a bill split.`,
-        notificationData
-      );
-
-      await refreshBillSplitting();
-
-      console.log('Added settlement:', newSettlement);
+      const newStats = calculateStats(billSplits, user.id, [...settlements, newSettlement]);
+      setStats(newStats);
+      console.log('Added new settlement:', newSettlement);
       return newSettlement;
     } catch (err) {
       console.error('Error adding settlement:', err.response?.data || err.message);
-      throw err;
+      throw new Error(err.response?.data?.error || 'Failed to add settlement');
     }
-  };
-
-  const removeGroup = (groupId) => {
-    const updatedGroups = groups.filter(g => String(g.id) !== String(groupId));
-    const updatedSplits = billSplits.filter(s => String(s.group_id) !== String(groupId));
-    setGroups(updatedGroups);
-    setBillSplits(updatedSplits);
-    if (user?.id) {
-      const newStats = calculateStats(updatedSplits, user.id, settlements);
-      setStats(newStats);
-
-      const group = groups.find(g => String(g.id) === String(groupId));
-      if (group) {
-        triggerNotification(
-          'Group Removed',
-          `The group "${group.name}" has been removed.`,
-          { screen: 'BillSplittingDashboard' }
-        );
-      }
-    }
-    console.log(`Removed group ${groupId} from context`);
   };
 
   return (
@@ -226,10 +268,11 @@ export const BillSplittingProvider = ({ children }) => {
         loading,
         error,
         refreshBillSplitting,
-        removeGroup,
-        user,
-        addSettlement,
         triggerNotification,
+        user,
+        addSettlement: addNewSettlement,
+        validateGroup,
+        removeGroup,
       }}
     >
       {children}

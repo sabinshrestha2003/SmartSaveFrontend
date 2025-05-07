@@ -45,8 +45,9 @@ const colors = {
   expenseLight: '#FFF1F2',
   income: '#10B981',
   incomeLight: '#ECFDF5',
-  text: '#1E293B',
-  textSecondary: '#64748B',
+  text: '#0A1122', // Darkened from #0F172A
+  textPrimary: '#111827', // Darkened from #1E293B
+  textSecondary: '#374151', // Darkened from #475569
   border: '#E2E8F0',
   gold: '#F59E0B',
   goldLight: '#FEF3C7',
@@ -56,9 +57,9 @@ const colors = {
   softBlue: '#74B9FF', 
   softRed: '#FF7675',  
 
-  primaryGreenLight: '#E6F8F0', // Light shade of primaryGreen
-  successLight: '#E6F8F0', // Light shade of successGreen (same as primaryGreenLight since successGreen matches primaryGreen)
-  errorRedLight: '#FFE6E6', // Light shade of errorRed
+  primaryGreenLight: '#E6F8F0',
+  successLight: '#E6F8F0',
+  errorRedLight: '#FFE6E6',
   dangerLight: '#FFE6E6',
 };
 

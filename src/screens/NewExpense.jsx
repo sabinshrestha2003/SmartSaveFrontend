@@ -41,7 +41,6 @@ const NewExpense = ({ navigation, route }) => {
 
   const modalAnimation = useRef(new Animated.Value(0)).current;
 
-  // Bill splitting specific categories
   const expenseCategories = [
     { label: 'Dining Out', icon: 'restaurant' },
     { label: 'Groceries', icon: 'basket' },
@@ -91,6 +90,21 @@ const NewExpense = ({ navigation, route }) => {
       return;
     }
 
+    // Validate groupId against groups from context
+    console.log('Available groups:', groups);
+    console.log('Provided groupId:', groupId);
+    const groupExists = groups.some(g => String(g.id) === String(groupId));
+    if (!groupExists) {
+      setError('The selected group does not exist. Please choose a valid group.');
+      setLoadingMembers(false);
+      Alert.alert(
+        'Invalid Group',
+        'The selected group does not exist. Returning to group selection.',
+        [{ text: 'OK', onPress: () => navigation.navigate('GroupSelection') }]
+      );
+      return;
+    }
+
     setLoadingMembers(true);
     setError(null);
 
@@ -126,7 +140,7 @@ const NewExpense = ({ navigation, route }) => {
         paid_amount: String(userId) === String(user?.id) ? parseFloat(totalAmount) || 0 : 0,
         share_amount: 0,
         split_method: 'equal',
-        split_value: 1, 
+        split_value: 1,
       }));
 
       setParticipants(calculateShares(initialParticipants));
@@ -136,7 +150,7 @@ const NewExpense = ({ navigation, route }) => {
     } finally {
       setLoadingMembers(false);
     }
-  }, [groupId, user, fetchUserDetails]);
+  }, [groupId, user, fetchUserDetails, groups, navigation]);
 
   useEffect(() => {
     navigation.setOptions({ title: 'Add New Expense' });
@@ -193,7 +207,7 @@ const NewExpense = ({ navigation, route }) => {
     if (method === 'percentage') {
       updatedParticipants = updatedParticipants.map(p => ({
         ...p,
-        split_value: 0, 
+        split_value: 0,
       }));
     } else {
       updatedParticipants = updatedParticipants.map(p => ({
@@ -325,7 +339,6 @@ const NewExpense = ({ navigation, route }) => {
     </View>
   );
 
-  // Modal animation and handlers
   const backdropOpacity = modalAnimation.interpolate({
     inputRange: [0, 1],
     outputRange: [0, 0.9],
@@ -548,7 +561,6 @@ const NewExpense = ({ navigation, route }) => {
           </TouchableOpacity>
         </View>
 
-        {/* Category Modal */}
         <Modal
           visible={showCategoryModal}
           transparent

@@ -11,6 +11,7 @@ import {
   ScrollView,
   RefreshControl,
   Animated,
+  Alert,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import { useBillSplitting } from '../context/BillSplittingContext';
@@ -18,12 +19,15 @@ import colors from '../styles/colors';
 import api from '../utils/api';
 
 const BillSplittingDashboard = ({ navigation, route }) => {
-  const { groups = [], billSplits = [], loading, error, refreshBillSplitting, user, settlements = [], triggerNotification } = useBillSplitting();
+  const { groups = [], billSplits = [], loading, error, refreshBillSplitting, user, settlements = [], triggerNotification, validateGroup } = useBillSplitting();
   const [refreshing, setRefreshing] = useState(false);
   const [fadeAnim] = useState(new Animated.Value(0));
   const [enrichedSplits, setEnrichedSplits] = useState([]);
   const [computedStats, setComputedStats] = useState({ totalOwed: 0, totalOwing: 0, netBalance: 0 });
   const [prevSplitCount, setPrevSplitCount] = useState(0);
+
+  // Sort groups by created_at (descending)
+  const sortedGroups = [...groups].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
   useEffect(() => {
     Animated.timing(fadeAnim, {
@@ -37,12 +41,12 @@ const BillSplittingDashboard = ({ navigation, route }) => {
 
   useEffect(() => {
     const unsubscribe = navigation.addListener('focus', () => {
-      console.log('BillSplittingDashboard focused');
+      console.log('BillSplittingDashboard focused, refreshing data');
+      handleRefresh();
       if (route.params?.groupCreated) {
         console.log('Group creation detected, refreshing dashboard');
-        handleRefresh();
-        if (groups.length > 0) {
-          const latestGroup = groups[0];
+        if (sortedGroups.length > 0) {
+          const latestGroup = sortedGroups[0];
           triggerNotification(
             'New Group Created',
             `Group "${latestGroup.name}" has been created.`,
@@ -62,11 +66,12 @@ const BillSplittingDashboard = ({ navigation, route }) => {
     }
 
     return unsubscribe;
-  }, [navigation, route.params?.shouldRefresh, route.params?.groupCreated, groups, triggerNotification]);
+  }, [navigation, route.params?.shouldRefresh, route.params?.groupCreated, sortedGroups, triggerNotification]);
 
   useEffect(() => {
     console.log('Settlements in context:', settlements);
-  }, [settlements]);
+    console.log('Groups in context:', groups);
+  }, [settlements, groups]);
 
   useEffect(() => {
     const computeStats = () => {
@@ -74,7 +79,8 @@ const BillSplittingDashboard = ({ navigation, route }) => {
       let totalOwing = 0;
 
       enrichedSplits.forEach(split => {
-        const participant = split.participants.find(p => p.user_id === user?.id);
+        if (!user?.id) return;
+        const participant = split.participants.find(p => String(p.user_id) === String(user.id));
         if (!participant) return;
 
         const yourShare = participant.share_amount || 0;
@@ -107,14 +113,14 @@ const BillSplittingDashboard = ({ navigation, route }) => {
         billSplits.map(async (split) => {
           const enrichedParticipants = await Promise.all(
             split.participants.map(async (p) => {
-              if (p.user_id === user?.id) {
+              if (!user?.id || String(p.user_id) === String(user.id)) {
                 return { ...p, name: 'You' };
               }
               try {
                 const response = await api.get('/splits/users/search', {
                   params: { q: p.user_id },
                 });
-                const userData = response.data.users.find(u => u.id === String(p.user_id));
+                const userData = response.data.users.find(u => String(u.id) === String(p.user_id));
                 return { ...p, name: userData?.name || `User ${p.user_id}` };
               } catch (err) {
                 console.error(`Error fetching user ${p.user_id}:`, err);
@@ -168,16 +174,21 @@ const BillSplittingDashboard = ({ navigation, route }) => {
         useNativeDriver: true,
       }).start();
 
-      const navigateToGroup = () => {
-        if (groups.find(g => g.id === item.id)) {
-          console.log(`Navigating to GroupDetails for group ${item.id}: ${item.name}`);
-          navigation.navigate('GroupDetails', {
-            groupId: item.id,
-            groupName: item.name,
-          });
-        } else {
-          console.warn(`Group ${item.id} not found in context.groups, skipping navigation`);
+      const navigateToGroup = async () => {
+        console.log(`Attempting navigation to group ${item.id}: ${item.name}`);
+        const group = await validateGroup(item.id);
+        if (!group) {
+          console.warn(`Group ${item.id} not found, refreshing dashboard`);
+          Alert.alert('Error', 'This group no longer exists.');
+          await refreshBillSplitting();
+          return;
         }
+        console.log(`Navigating with groupId: ${item.id}, groupName: ${item.name}, group:`, group);
+        navigation.navigate('GroupDetails', {
+          groupId: String(item.id),
+          groupName: item.name,
+          group,
+        });
       };
 
       return (
@@ -205,16 +216,17 @@ const BillSplittingDashboard = ({ navigation, route }) => {
         </Animated.View>
       );
     },
-    [fadeAnim, navigation, groups]
+    [fadeAnim, navigation, validateGroup, refreshBillSplitting]
   );
 
   const renderSplitItem = useCallback(
     ({ item, index }) => {
-      const participant = item.participants.find(p => p.user_id === user?.id);
+      if (!user?.id) return null;
+      const participant = item.participants.find(p => String(p.user_id) === String(user.id));
       const yourShare = participant?.share_amount || 0;
       const yourPaid = participant?.paid_amount || 0;
       const amountOwed = yourShare - yourPaid;
-      const isCurrentUser = participant?.user_id === user?.id;
+      const isCurrentUser = String(participant?.user_id) === String(user.id);
 
       const status = amountOwed > 0
         ? isCurrentUser
@@ -248,7 +260,7 @@ const BillSplittingDashboard = ({ navigation, route }) => {
             onPress={() => {
               console.log(`Navigating to SplitDetails for split ${item.id}: ${item.name}`);
               navigation.navigate('SplitDetails', {
-                splitId: item.id,
+                splitId: String(item.id),
                 splitName: item.name,
               });
             }}
@@ -469,21 +481,21 @@ const BillSplittingDashboard = ({ navigation, route }) => {
               </TouchableOpacity>
             </View>
 
-            {groups.length > 0 ? (
+            {sortedGroups.length > 0 ? (
               <FlatList
-                data={groups.slice(0, 3)}
+                data={sortedGroups.slice(0, 3)}
                 renderItem={renderGroupItem}
-                keyExtractor={item => item.id.toString()}
+                keyExtractor={item => String(item.id)}
                 scrollEnabled={false}
                 ListFooterComponent={
-                  groups.length > 3 ? (
+                  sortedGroups.length > 3 ? (
                     <TouchableOpacity
                       style={styles.seeMoreButton}
                       onPress={() => navigation.navigate('AllGroups')}
                       activeOpacity={0.8}
                     >
                       <Text style={styles.seeMoreText}>
-                        See all {groups.length} groups
+                        See all {sortedGroups.length} groups
                       </Text>
                       <Ionicons name="chevron-forward" size={16} color={colors.primaryGreen} />
                     </TouchableOpacity>
@@ -541,7 +553,7 @@ const BillSplittingDashboard = ({ navigation, route }) => {
               <FlatList
                 data={enrichedSplits.slice(0, 3)}
                 renderItem={renderSplitItem}
-                keyExtractor={item => item.id.toString()}
+                keyExtractor={item => String(item.id)}
                 scrollEnabled={false}
                 ListFooterComponent={
                   enrichedSplits.length > 3 ? (
@@ -634,25 +646,24 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 24,
-    backgroundColor: colors.primaryGreen,
+    backgroundColor: colors.white,
     borderRadius: 16,
     padding: 16,
-    shadowColor: colors.primaryGreen,
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 4,
   },
   headerTitle: {
     fontSize: 28,
     fontWeight: '800',
-    color: '#333333',
+    color: colors.textPrimary,
     fontFamily: 'Inter-Bold',
   },
   headerSubtitle: {
     fontSize: 14,
-    color: '#333333',
-    opacity: 0.9,
+    color: colors.textSecondary,
     marginTop: 4,
     fontFamily: 'Inter-Regular',
   },
@@ -660,11 +671,11 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    backgroundColor: colors.lightGray,
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.3)',
+    borderColor: colors.border,
   },
   statsGrid: {
     flexDirection: 'row',
@@ -726,24 +737,24 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontWeight: '700',
-    color: '#333333',
+    color: colors.textPrimary,
     fontFamily: 'Inter-Bold',
   },
   newButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.primaryGreen,
+    backgroundColor: colors.primaryGreenLight,
     paddingVertical: 8,
     paddingHorizontal: 12,
     borderRadius: 20,
     elevation: 2,
-    shadowColor: colors.primaryGreen,
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
   },
   newButtonText: {
-    color: '#333333',
+    color: colors.textPrimary,
     fontSize: 14,
     fontWeight: '600',
     marginLeft: 6,
@@ -774,17 +785,17 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.05)',
+    borderColor: colors.border,
   },
   groupIconContainer: {
     width: 44,
     height: 44,
     borderRadius: 12,
-    backgroundColor: colors.primaryGreen,
+    backgroundColor: colors.primaryGreenLight,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
-    shadowColor: colors.primaryGreen,
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
@@ -796,7 +807,7 @@ const styles = StyleSheet.create({
   groupName: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.text,
+    color: colors.textPrimary,
     marginBottom: 4,
     fontFamily: 'Inter-SemiBold',
   },
@@ -824,7 +835,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.05)',
+    borderColor: colors.border,
   },
   splitContent: {
     flex: 1,
@@ -863,7 +874,7 @@ const styles = StyleSheet.create({
   },
   splitShareLabel: {
     fontSize: 13,
-    color: colors.accentGold,
+    color: colors.textSecondary,
     fontFamily: 'Inter-Regular',
   },
   splitShareAmount: {
@@ -911,17 +922,17 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.05)',
+    borderColor: colors.border,
   },
   emptyStateIcon: {
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: colors.primaryGreen,
+    backgroundColor: colors.primaryGreenLight,
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
-    shadowColor: colors.primaryGreen,
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
@@ -947,13 +958,13 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 24,
     elevation: 4,
-    shadowColor: colors.primaryGreen,
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
   },
   primaryButtonText: {
-    color: '#333333',
+    color: colors.textPrimary,
     fontSize: 14,
     fontWeight: '600',
     fontFamily: 'Inter-SemiBold',
@@ -988,7 +999,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     borderWidth: 1,
-    borderColor: 'rgba(0,0,0,0.05)',
+    borderColor: colors.border,
   },
   actionIconContainer: {
     width: 56,
@@ -1006,7 +1017,7 @@ const styles = StyleSheet.create({
   actionText: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#333333',
+    color: colors.textPrimary,
     fontFamily: 'Inter-SemiBold',
   },
   loadingContainer: {
@@ -1041,13 +1052,13 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 24,
     elevation: 4,
-    shadowColor: colors.primaryGreen,
+    shadowColor: colors.shadow,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
   },
   retryButtonText: {
-    color: '#333333',
+    color: colors.textPrimary,
     fontSize: 16,
     fontWeight: '600',
     fontFamily: 'Inter-SemiBold',

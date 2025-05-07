@@ -1,6 +1,4 @@
-'use client';
-
-import {useState, useEffect, useCallback} from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -16,16 +14,16 @@ import {
   Alert,
 } from 'react-native';
 import Ionicons from 'react-native-vector-icons/Ionicons';
-import {useBillSplitting} from '../context/BillSplittingContext';
+import { useBillSplitting } from '../context/BillSplittingContext';
+import { useFocusEffect } from '@react-navigation/native';
 import colors from '../styles/colors';
 import { getGroup, searchUsers } from '../utils/api';
 
-// Cache for user details to avoid repetitive API calls
 const userCache = {};
 
-const GroupDetails = ({navigation, route}) => {
-  const {group: initialGroup, groupId} = route.params || {};
-  const {groups, billSplits, user, refreshBillSplitting} = useBillSplitting();
+const GroupDetails = ({ navigation, route }) => {
+  const { group: initialGroup, groupId, groupName } = route.params || {};
+  const { groups, billSplits, user, refreshBillSplitting, validateGroup } = useBillSplitting();
   const [group, setGroup] = useState(initialGroup || null);
   const [splits, setSplits] = useState([]);
   const [loading, setLoading] = useState(!initialGroup);
@@ -49,7 +47,7 @@ const GroupDetails = ({navigation, route}) => {
 
     try {
       const response = await searchUsers(userId);
-      const userData = response.data.users.find(u => u.id === String(userId));
+      const userData = response.data.users.find(u => String(u.id) === String(userId));
       const userDetails = {
         id: userId,
         name: userData?.name || `User ${userId}`,
@@ -73,7 +71,7 @@ const GroupDetails = ({navigation, route}) => {
   const enrichMembers = useCallback(
     async groupData => {
       if (!Array.isArray(groupData.members) || groupData.members.length === 0) {
-        return {...groupData, members: []};
+        return { ...groupData, members: [] };
       }
 
       if (
@@ -87,7 +85,7 @@ const GroupDetails = ({navigation, route}) => {
       try {
         const enrichedMembers = await Promise.all(
           groupData.members.map(async memberId => {
-            if (memberId === user?.id) {
+            if (String(memberId) === String(user?.id)) {
               return {
                 id: memberId,
                 name: 'You',
@@ -99,14 +97,14 @@ const GroupDetails = ({navigation, route}) => {
           }),
         );
         console.log('Enriched members:', enrichedMembers);
-        return {...groupData, members: enrichedMembers};
+        return { ...groupData, members: enrichedMembers };
       } catch (error) {
         console.error('Error enriching members:', error);
         return {
           ...groupData,
           members: groupData.members.map(id => ({
             id,
-            name: id === user?.id ? 'You' : `User ${id}`,
+            name: String(id) === String(user?.id) ? 'You' : `User ${id}`,
           })),
         };
       }
@@ -121,12 +119,14 @@ const GroupDetails = ({navigation, route}) => {
     setError(null);
 
     try {
-      const groupResponse = await getGroup(groupId);
-      const fetchedGroup = groupResponse.data.group;
-      const enrichedGroup = await enrichMembers(fetchedGroup);
+      const groupData = await validateGroup(groupId);
+      if (!groupData) {
+        throw new Error('Group not found');
+      }
+      const enrichedGroup = await enrichMembers(groupData);
       setGroup(enrichedGroup);
       const groupSplits = billSplits.filter(
-        split => split && split.group_id === enrichedGroup.id,
+        split => split && String(split.group_id) === String(enrichedGroup.id),
       );
       setSplits(groupSplits);
     } catch (error) {
@@ -134,7 +134,7 @@ const GroupDetails = ({navigation, route}) => {
         'Error fetching group data:',
         error.response?.data || error.message,
       );
-      if (error.response?.status === 404) {
+      if (error.response?.status === 404 || error.message === 'Group not found') {
         setError('This group no longer exists.');
         setIsDeleted(true);
         Alert.alert('Error', 'This group no longer exists.', [
@@ -143,14 +143,14 @@ const GroupDetails = ({navigation, route}) => {
             onPress: () =>
               navigation.reset({
                 index: 0,
-                routes: [{name: 'BillSplittingDashboard'}],
+                routes: [{ name: 'BillSplittingDashboard' }],
               }),
           },
         ]);
       } else if (error.response?.status === 403) {
         setError("You don't have access to this group.");
         Alert.alert('Error', "You don't have access to this group.", [
-          {text: 'OK', onPress: () => navigation.goBack()},
+          { text: 'OK', onPress: () => navigation.goBack() },
         ]);
       } else {
         setError(
@@ -166,22 +166,32 @@ const GroupDetails = ({navigation, route}) => {
     } finally {
       setLoading(false);
     }
-  }, [groupId, navigation, billSplits, enrichMembers, isDeleted]);
+  }, [groupId, navigation, billSplits, enrichMembers, isDeleted, validateGroup]);
 
   const updateFromContext = useCallback(() => {
     if (isDeleted) return;
 
-    const contextGroup = groups.find(g => g.id === (groupId || group?.id));
+    const contextGroup = groups.find(g => String(g.id) === String(groupId));
     if (contextGroup) {
-      const updatedGroup = {
-        ...contextGroup,
-        members: group?.members || contextGroup.members,
-      };
-      setGroup(updatedGroup);
+      setGroup(prevGroup => {
+        const members = prevGroup?.members || contextGroup.members;
+        const updatedGroup = { ...contextGroup, members };
+        if (
+          JSON.stringify(prevGroup) !== JSON.stringify(updatedGroup)
+        ) {
+          return updatedGroup;
+        }
+        return prevGroup;
+      });
       const groupSplits = billSplits.filter(
-        split => split && split.group_id === updatedGroup.id,
+        split => split && String(split.group_id) === String(contextGroup.id),
       );
-      setSplits(groupSplits);
+      setSplits(prevSplits => {
+        if (JSON.stringify(prevSplits) !== JSON.stringify(groupSplits)) {
+          return groupSplits;
+        }
+        return prevSplits;
+      });
     } else if (groups.length > 0 && !contextGroup) {
       setError('This group no longer exists.');
       setIsDeleted(true);
@@ -191,31 +201,38 @@ const GroupDetails = ({navigation, route}) => {
           onPress: () =>
             navigation.reset({
               index: 0,
-              routes: [{name: 'BillSplittingDashboard'}],
+              routes: [{ name: 'BillSplittingDashboard' }],
             }),
         },
       ]);
       setGroup(null);
     }
-  }, [groups, billSplits, groupId, group, navigation, isDeleted]);
+  }, [groups, billSplits, groupId, isDeleted, navigation]);
 
   useEffect(() => {
     let isMounted = true;
-    const unsubscribe = navigation.addListener('focus', () => {
-      console.log(
-        `GroupDetails focused with groupId: ${groupId}, initialGroup: ${!!initialGroup}`,
-      );
-    });
+
+    if (!groupId && !initialGroup) {
+      if (isMounted) {
+        setError('No group or group ID provided.');
+        Alert.alert('Error', 'No group or group ID provided.', [
+          { text: 'OK', onPress: () => navigation.goBack() },
+        ]);
+      }
+      return;
+    }
 
     if (initialGroup) {
+      console.log('Using initialGroup:', initialGroup);
       enrichMembers(initialGroup)
         .then(enrichedGroup => {
           if (isMounted) {
             setGroup(enrichedGroup);
             const groupSplits = billSplits.filter(
-              split => split && split.group_id === enrichedGroup.id,
+              split => split && String(split.group_id) === String(enrichedGroup.id),
             );
             setSplits(groupSplits);
+            setLoading(false);
           }
         })
         .catch(error => {
@@ -224,37 +241,33 @@ const GroupDetails = ({navigation, route}) => {
             setError('Failed to load group members.');
             Alert.alert('Error', 'Failed to load group members.');
             setGroup(null);
+            setLoading(false);
           }
         });
     } else if (groupId) {
+      console.log('Fetching group data for groupId:', groupId);
       fetchGroupData();
-    } else {
-      if (isMounted) {
-        setError('No group or group ID provided.');
-        Alert.alert('Error', 'No group or group ID provided.', [
-          {text: 'OK', onPress: () => navigation.goBack()},
-        ]);
-      }
     }
 
     return () => {
       isMounted = false;
-      unsubscribe();
     };
-  }, [
-    groupId,
-    initialGroup,
-    navigation,
-    billSplits,
-    fetchGroupData,
-    enrichMembers,
-  ]);
+  }, [groupId, initialGroup, billSplits, fetchGroupData, enrichMembers, navigation]);
 
-  useEffect(() => {
-    if (!loading && (groupId || group) && !isDeleted) {
-      updateFromContext();
-    }
-  }, [groups, billSplits, groupId, group, updateFromContext, isDeleted]);
+  useFocusEffect(
+    useCallback(() => {
+      console.log(
+        `GroupDetails focused with groupId: ${groupId}, initialGroup:`,
+        initialGroup,
+      );
+      if (!isDeleted) {
+        updateFromContext();
+        if (!initialGroup) {
+          fetchGroupData();
+        }
+      }
+    }, [groupId, initialGroup, updateFromContext, fetchGroupData, isDeleted]),
+  );
 
   const handleRefresh = async () => {
     if (isDeleted) return;
@@ -273,26 +286,48 @@ const GroupDetails = ({navigation, route}) => {
     }
   };
 
+  const navigateToNewExpense = async () => {
+    try {
+      const groupData = await validateGroup(groupId);
+      if (!groupData) {
+        Alert.alert(
+          'Invalid Group',
+          'This group no longer exists. Returning to dashboard.',
+          [{
+            text: 'OK',
+            onPress: () => navigation.navigate('BillSplittingDashboard'),
+          }],
+        );
+        return;
+      }
+      navigation.navigate('NewExpense', { groupId: group.id });
+    } catch (error) {
+      console.error('Error validating group for NewExpense:', error);
+      Alert.alert('Error', 'Failed to verify group. Please try again.');
+    }
+  };
+
   const renderSplitItem = useCallback(
-    ({item}) => {
+    ({ item }) => {
       const yourShare =
-        item.participants.find(p => p.user_id === user?.id)?.share_amount || 0;
+        item.participants.find(p => String(p.user_id) === String(user?.id))?.share_amount || 0;
       const amountOwed =
-        item.participants.find(p => p.user_id === user?.id)?.amount_owed || 0;
+        item.participants.find(p => String(p.user_id) === String(user?.id))?.amount_owed || 0;
       const status =
         amountOwed > 0
-          ? item.creator_id === user?.id
+          ? String(item.creator_id) === String(user?.id)
             ? 'to take'
             : 'to give'
           : 'settled';
 
       return (
-        <Animated.View style={[styles.splitCard, {opacity: fadeAnim}]}>
+        <Animated.View style={[styles.splitCard, { opacity: fadeAnim }]}>
           <TouchableOpacity
             onPress={() =>
-              navigation.navigate('SplitDetails', {splitId: item.id})
+              navigation.navigate('SplitDetails', { splitId: item.id })
             }
-            activeOpacity={0.7}>
+            activeOpacity={0.7}
+          >
             <View style={styles.splitHeader}>
               <View style={styles.splitNameContainer}>
                 <Ionicons
@@ -330,14 +365,16 @@ const GroupDetails = ({navigation, route}) => {
                   status === 'to give' && styles.statusOweContainer,
                   status === 'to take' && styles.statusOwedContainer,
                   status === 'settled' && styles.statusSettledContainer,
-                ]}>
+                ]}
+              >
                 <Text
                   style={[
                     styles.splitStatus,
                     status === 'to give' && styles.statusOwe,
                     status === 'to take' && styles.statusOwed,
                     status === 'settled' && styles.statusSettled,
-                  ]}>
+                  ]}
+                >
                   {status === 'to give'
                     ? `To Give $${Math.abs(amountOwed).toFixed(2)}`
                     : status === 'to take'
@@ -354,16 +391,16 @@ const GroupDetails = ({navigation, route}) => {
   );
 
   const renderMember = useCallback(
-    ({item}) => {
+    ({ item }) => {
       const memberName =
-        item.name || (item.id === user?.id ? 'You' : `User ${item.id}`);
+        item.name || (String(item.id) === String(user?.id) ? 'You' : `User ${item.id}`);
       return (
         <View style={styles.memberRow}>
           <View style={styles.memberAvatarContainer}>
             <Ionicons name="person" size={20} color={colors.white} />
           </View>
           <Text style={styles.memberName}>{memberName}</Text>
-          {item.id === user?.id && (
+          {String(item.id) === String(user?.id) && (
             <View style={styles.youBadge}>
               <Text style={styles.youBadgeText}>Me</Text>
             </View>
@@ -404,7 +441,8 @@ const GroupDetails = ({navigation, route}) => {
           <Text style={styles.errorText}>{error || 'Group not found'}</Text>
           <TouchableOpacity
             style={styles.backButtonError}
-            onPress={() => navigation.navigate('BillSplittingDashboard')}>
+            onPress={() => navigation.navigate('BillSplittingDashboard')}
+          >
             <Text style={styles.backButtonText}>Back to Dashboard</Text>
           </TouchableOpacity>
         </View>
@@ -425,11 +463,13 @@ const GroupDetails = ({navigation, route}) => {
             colors={[colors.primaryGreen]}
             tintColor={colors.primaryGreen}
           />
-        }>
-        <Animated.View style={[styles.header, {opacity: fadeAnim}]}>
+        }
+      >
+        <Animated.View style={[styles.header, { opacity: fadeAnim }]}>
           <TouchableOpacity
             onPress={() => navigation.goBack()}
-            style={styles.backButton}>
+            style={styles.backButton}
+          >
             <Ionicons name="arrow-back" size={24} color={colors.primaryGreen} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>{group.name}</Text>
@@ -449,7 +489,8 @@ const GroupDetails = ({navigation, route}) => {
                 },
               ],
             },
-          ]}>
+          ]}
+        >
           <View style={styles.groupInfo}>
             <View style={styles.groupIconContainer}>
               <Ionicons name="people" size={24} color={colors.white} />
@@ -465,11 +506,8 @@ const GroupDetails = ({navigation, route}) => {
           <View style={styles.actionButtons}>
             <TouchableOpacity
               style={styles.actionButton}
-              onPress={() =>
-                navigation.navigate('NewExpense', {
-                  groupId: group.id,
-                })
-              }>
+              onPress={navigateToNewExpense}
+            >
               <Ionicons
                 name="add-circle-outline"
                 size={20}
@@ -480,7 +518,8 @@ const GroupDetails = ({navigation, route}) => {
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.actionButton, styles.editButton]}
-              onPress={() => navigation.navigate('EditGroup', {group})}>
+              onPress={() => navigation.navigate('EditGroup', { group, user })}
+            >
               <Ionicons
                 name="create-outline"
                 size={20}
@@ -506,7 +545,8 @@ const GroupDetails = ({navigation, route}) => {
                 },
               ],
             },
-          ]}>
+          ]}
+        >
           <View style={styles.sectionTitleWrapper}>
             <Ionicons
               name="people"
@@ -548,7 +588,8 @@ const GroupDetails = ({navigation, route}) => {
                 },
               ],
             },
-          ]}>
+          ]}
+        >
           <View style={styles.sectionTitleWrapper}>
             <Ionicons
               name="receipt"
@@ -580,9 +621,8 @@ const GroupDetails = ({navigation, route}) => {
               </Text>
               <TouchableOpacity
                 style={styles.addButton}
-                onPress={() =>
-                  navigation.navigate('NewExpense', {groupId: group.id})
-                }>
+                onPress={navigateToNewExpense}
+              >
                 <Ionicons
                   name="add-circle-outline"
                   size={20}
@@ -598,8 +638,9 @@ const GroupDetails = ({navigation, route}) => {
 
       <TouchableOpacity
         style={styles.floatingActionButton}
-        onPress={() => navigation.navigate('NewExpense', {groupId: group.id})}
-        activeOpacity={0.8}>
+        onPress={navigateToNewExpense}
+        activeOpacity={0.8}
+      >
         <Ionicons name="add" size={24} color={colors.white} />
       </TouchableOpacity>
     </SafeAreaView>
@@ -631,7 +672,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: colors.white,
     shadowColor: colors.shadow,
-    shadowOffset: {width: 0, height: 4},
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 4,
@@ -651,7 +692,7 @@ const styles = StyleSheet.create({
     padding: 20,
     marginBottom: 24,
     shadowColor: colors.shadow,
-    shadowOffset: {width: 0, height: 4},
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 4,
@@ -671,7 +712,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: colors.primaryGreen,
-    shadowOffset: {width: 0, height: 2},
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 2,
@@ -707,7 +748,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: colors.primaryGreen,
-    shadowOffset: {width: 0, height: 4},
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 4,
@@ -747,7 +788,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 4,
     shadowColor: colors.shadow,
-    shadowOffset: {width: 0, height: 4},
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 4,
@@ -772,7 +813,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginRight: 12,
     shadowColor: colors.primaryGreen,
-    shadowOffset: {width: 0, height: 2},
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 2,
@@ -801,7 +842,7 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 12,
     shadowColor: colors.shadow,
-    shadowOffset: {width: 0, height: 4},
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 4,
@@ -871,33 +912,32 @@ const styles = StyleSheet.create({
     backgroundColor: colors.dangerLight,
   },
   statusOwedContainer: {
-    backgroundColor: colors.successLight,
+    backgroundColor: colors.primaryGreenLight,
   },
   statusSettledContainer: {
     backgroundColor: colors.lightGray,
   },
   splitStatus: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     fontFamily: 'Inter-SemiBold',
   },
   statusOwe: {
-    color: colors.errorRed,
+    color: colors.danger,
   },
   statusOwed: {
-    color: colors.successGreen,
+    color: colors.primaryGreen,
   },
   statusSettled: {
     color: colors.textSecondary,
   },
   emptyState: {
     alignItems: 'center',
-    justifyContent: 'center',
-    padding: 32,
+    padding: 20,
     backgroundColor: colors.white,
     borderRadius: 16,
     shadowColor: colors.shadow,
-    shadowOffset: {width: 0, height: 4},
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 4,
@@ -913,34 +953,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 16,
     shadowColor: colors.primaryGreen,
-    shadowOffset: {width: 0, height: 4},
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowRadius: 4,
+    elevation: 2,
   },
   emptyStateText: {
     fontSize: 18,
     fontWeight: '600',
-    color: colors.textPrimary,
-    marginBottom: 6,
+    color: colors.text,
+    marginBottom: 8,
     fontFamily: 'Inter-SemiBold',
   },
   emptyStateSubtext: {
     fontSize: 14,
     color: colors.textSecondary,
-    marginBottom: 20,
     textAlign: 'center',
-    fontFamily: 'Inter-Regular',
-  },
-  emptyMembers: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 20,
-  },
-  emptyText: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    textAlign: 'center',
+    marginBottom: 16,
     fontFamily: 'Inter-Regular',
   },
   addButton: {
@@ -951,7 +980,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     alignItems: 'center',
     shadowColor: colors.primaryGreen,
-    shadowOffset: {width: 0, height: 4},
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 4,
@@ -961,47 +990,65 @@ const styles = StyleSheet.create({
   },
   addButtonText: {
     color: colors.white,
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '600',
     fontFamily: 'Inter-SemiBold',
+  },
+  emptyMembers: {
+    padding: 20,
+    alignItems: 'center',
+  },
+  emptyText: {
+    fontSize: 14,
+    color: colors.textSecondary,
+    fontFamily: 'Inter-Regular',
+  },
+  floatingActionButton: {
+    position: 'absolute',
+    bottom: 24,
+    right: 24,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.primaryGreen,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: colors.primaryGreen,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: colors.background,
   },
   loadingText: {
+    marginTop: 12,
     fontSize: 16,
     color: colors.textSecondary,
-    marginTop: 16,
-    fontFamily: 'Inter-Medium',
+    fontFamily: 'Inter-Regular',
   },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 32,
-    backgroundColor: colors.background,
+    padding: 20,
   },
   errorIconContainer: {
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: colors.errorRed,
+    backgroundColor: colors.danger,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 20,
-    shadowColor: colors.errorRed,
-    shadowOffset: {width: 0, height: 4},
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 4,
+    marginBottom: 16,
   },
   errorTitle: {
     fontSize: 24,
     fontWeight: '700',
-    color: colors.textPrimary,
+    color: colors.text,
     marginBottom: 8,
     fontFamily: 'Inter-Bold',
   },
@@ -1010,15 +1057,15 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: 24,
-    fontFamily: 'Inter-Medium',
+    fontFamily: 'Inter-Regular',
   },
   backButtonError: {
     backgroundColor: colors.primaryGreen,
     borderRadius: 12,
-    paddingVertical: 14,
+    paddingVertical: 12,
     paddingHorizontal: 24,
     shadowColor: colors.primaryGreen,
-    shadowOffset: {width: 0, height: 4},
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 4,
@@ -1028,22 +1075,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     fontFamily: 'Inter-SemiBold',
-  },
-  floatingActionButton: {
-    position: 'absolute',
-    bottom: 20,
-    right: 20,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: colors.primaryGreen,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 8,
-    shadowColor: colors.primaryGreen,
-    shadowOffset: {width: 0, height: 4},
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
   },
 });
 

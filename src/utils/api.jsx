@@ -84,4 +84,16 @@ export const addSettlement = async (settlementData) => {
   return api.post('/splits/settlements', settlementData);
 };
 
+export const deleteGroup = async (groupId) => {
+  console.log(`Sending DELETE request for group ${groupId}`);
+  try {
+    const response = await api.delete(`/splits/groups/${groupId}`);
+    console.log(`DELETE response for group ${groupId}:`, response.data);
+    return response;
+  } catch (error) {
+    console.error(`Failed to delete group ${groupId}:`, error.response?.data || error.message);
+    throw error;
+  }
+};
+
 export default api;
