@@ -26,7 +26,6 @@ const BillSplittingDashboard = ({ navigation, route }) => {
   const [computedStats, setComputedStats] = useState({ totalOwed: 0, totalOwing: 0, netBalance: 0 });
   const [prevSplitCount, setPrevSplitCount] = useState(0);
 
-  // Sort groups by created_at (descending)
   const sortedGroups = [...groups].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
   useEffect(() => {
@@ -58,15 +57,14 @@ const BillSplittingDashboard = ({ navigation, route }) => {
         }
         navigation.setParams({ groupCreated: false });
       }
+      if (route.params?.shouldRefresh) {
+        handleRefresh();
+        navigation.setParams({ shouldRefresh: false });
+      }
     });
 
-    if (route.params?.shouldRefresh) {
-      handleRefresh();
-      navigation.setParams({ shouldRefresh: false });
-    }
-
     return unsubscribe;
-  }, [navigation, route.params?.shouldRefresh, route.params?.groupCreated, sortedGroups, triggerNotification]);
+  }, [navigation, route.params?.groupCreated, route.params?.shouldRefresh, sortedGroups, triggerNotification]);
 
   useEffect(() => {
     console.log('Settlements in context:', settlements);

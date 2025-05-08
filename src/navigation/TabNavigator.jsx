@@ -13,7 +13,7 @@ import colors from '../styles/colors';
 const Tab = createBottomTabNavigator();
 const TAB_BAR_HEIGHT = 70;
 
-const TabNavigator = ({ navigation, route }) => {
+const TabNavigator = ({ navigation }) => {
   const tabAnimations = {
     Home: useRef(new Animated.Value(0)).current,
     Savings: useRef(new Animated.Value(0)).current,
@@ -22,7 +22,6 @@ const TabNavigator = ({ navigation, route }) => {
     More: useRef(new Animated.Value(0)).current,
   };
 
-  // Custom tab bar icon component with animation
   const TabBarIcon = ({ route, focused, color, size }) => {
     let iconName;
 
@@ -46,7 +45,6 @@ const TabNavigator = ({ navigation, route }) => {
         iconName = 'alert-circle-outline';
     }
 
-    // Animate the active tab
     useEffect(() => {
       Animated.spring(tabAnimations[route.name], {
         toValue: focused ? 1 : 0,
@@ -85,6 +83,24 @@ const TabNavigator = ({ navigation, route }) => {
     );
   };
 
+  useEffect(() => {
+    const unsubscribe = navigation.addListener('state', () => {
+      const state = navigation.getState();
+      const currentTab = state.routes[state.index]?.name;
+      if (currentTab) {
+        Object.keys(tabAnimations).forEach(tab => {
+          Animated.spring(tabAnimations[tab], {
+            toValue: tab === currentTab ? 1 : 0,
+            friction: 6,
+            tension: 50,
+            useNativeDriver: true,
+          }).start();
+        });
+      }
+    });
+    return unsubscribe;
+  }, [navigation, tabAnimations]);
+
   return (
     <View style={styles.container}>
       <Tab.Navigator
@@ -92,7 +108,7 @@ const TabNavigator = ({ navigation, route }) => {
           tabBarIcon: ({ focused, color, size }) => (
             <TabBarIcon route={route} focused={focused} color={color} size={size} />
           ),
-          tabBarActiveTintColor: colors.primaryGreen, 
+          tabBarActiveTintColor: colors.primaryGreen,
           tabBarInactiveTintColor: colors.darkGray,
           tabBarStyle: {
             position: 'absolute',
@@ -116,12 +132,11 @@ const TabNavigator = ({ navigation, route }) => {
           tabBarLabelStyle: {
             fontSize: 12,
             fontWeight: '600',
-            paddingBottom: 4,
           },
           tabBarBackground: () => (
             <View style={styles.tabBarBackground}>
               <LinearGradient
-                colors={[colors.white, colors.lightGray]} 
+                colors={[colors.white, colors.lightGray]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 0, y: 1 }}
                 style={styles.tabBarGradient}

@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useRef} from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
@@ -16,12 +16,11 @@ import {
 import Ionicons from 'react-native-vector-icons/Ionicons';
 import colors from '../styles/colors';
 import api from '../utils/api';
-import {useBillSplitting} from '../context/BillSplittingContext';
+import { useBillSplitting } from '../context/BillSplittingContext';
 
-const EditGroup = ({navigation, route}) => {
-  const {group: initialGroup} = route.params || {};
-  const {refreshBillSplitting, removeGroup, triggerNotification} =
-    useBillSplitting();
+const EditGroup = ({ navigation, route }) => {
+  const { group: initialGroup } = route.params || {};
+  const { refreshBillSplitting, removeGroup, triggerNotification } = useBillSplitting();
 
   const [groupName, setGroupName] = useState(initialGroup?.name || '');
   const [groupType, setGroupType] = useState(initialGroup?.type || 'Custom');
@@ -40,7 +39,7 @@ const EditGroup = ({navigation, route}) => {
     });
     if (!initialGroup) {
       Alert.alert('Error', 'No group data provided.', [
-        {text: 'OK', onPress: () => navigation.goBack()},
+        { text: 'OK', onPress: () => navigation.goBack() },
       ]);
     }
     return () => {
@@ -72,14 +71,14 @@ const EditGroup = ({navigation, route}) => {
     setLoading(true);
     try {
       const response = await api.get('/splits/users/search', {
-        params: {q: searchQuery},
+        params: { q: searchQuery },
       });
       if (!response.data || !Array.isArray(response.data.users)) {
         throw new Error('Invalid API response: "users" array expected');
       }
       setSearchResults(
         response.data.users
-          .map(user => ({...user, id: String(user.id)}))
+          .map(user => ({ ...user, id: String(user.id) }))
           .filter(user => !members.some(m => String(m.id) === String(user.id))),
       );
     } catch (error) {
@@ -99,7 +98,7 @@ const EditGroup = ({navigation, route}) => {
   const addMember = user => {
     setMembers([
       ...members,
-      {id: String(user.id), name: user.name, email: user.email},
+      { id: String(user.id), name: user.name, email: user.email },
     ]);
     setSearchQuery('');
     setSearchResults([]);
@@ -127,10 +126,7 @@ const EditGroup = ({navigation, route}) => {
       };
 
       console.log('Updating group:', initialGroup.id, updatedGroup);
-      const response = await api.put(
-        `/splits/groups/${initialGroup.id}`,
-        updatedGroup,
-      );
+      const response = await api.put(`/splits/groups/${initialGroup.id}`, updatedGroup);
       console.log('Update response:', response.data);
       await refreshBillSplitting();
 
@@ -140,20 +136,17 @@ const EditGroup = ({navigation, route}) => {
           `The group "${groupName.trim()}" has been updated.`,
           {
             screen: 'GroupDetails',
-            params: {groupId: initialGroup.id, groupName: groupName.trim()},
+            params: { groupId: initialGroup.id, groupName: groupName.trim() },
           },
           member.id,
         );
       }
 
       Alert.alert('Success', 'Group updated successfully', [
-        {text: 'OK', onPress: () => navigation.goBack()},
+        { text: 'OK', onPress: () => navigation.goBack() },
       ]);
     } catch (error) {
-      console.error(
-        'Update group error:',
-        error.response?.data || error.message,
-      );
+      console.error('Update group error:', error.response?.data || error.message);
       let errorMessage = 'Failed to update group';
       if (error.response) {
         if (error.response.status === 403) {
@@ -175,7 +168,7 @@ const EditGroup = ({navigation, route}) => {
       'Delete Group',
       'Are you sure you want to delete this group? This action cannot be undone.',
       [
-        {text: 'Cancel', style: 'cancel'},
+        { text: 'Cancel', style: 'cancel' },
         {
           text: 'Delete',
           style: 'destructive',
@@ -183,34 +176,23 @@ const EditGroup = ({navigation, route}) => {
             setSaving(true);
             try {
               console.log('Attempting to delete group:', initialGroup.id);
-              const response = await api.delete(
-                `/splits/groups/${initialGroup.id}`,
-              );
+              const response = await api.delete(`/splits/groups/${initialGroup.id}`);
               console.log('Delete response:', response.data);
-              removeGroup(initialGroup.id); // Update context
-              console.log(
-                `Removed group ${initialGroup.id} from context (EditGroup)`,
-              );
-              await refreshBillSplitting(); // Refresh context data
+              removeGroup(initialGroup.id);
+              console.log(`Removed group ${initialGroup.id} from context (EditGroup)`);
+              await refreshBillSplitting();
               for (const member of initialGroup.members) {
                 await triggerNotification(
                   'Group Deleted',
                   `The group "${initialGroup.name}" has been deleted.`,
-                  {screen: 'BillSplittingDashboard'},
+                  { screen: 'BillSplittingDashboard' },
                   member.id,
                 );
               }
-              // Navigate immediately to avoid further updates
-              navigation.reset({
-                index: 0,
-                routes: [{name: 'BillSplittingDashboard'}],
-              });
+              navigation.navigate('Tabs', { screen: 'BillSplittingDashboard', params: { shouldRefresh: true } });
               Alert.alert('Success', 'Group deleted successfully');
             } catch (error) {
-              console.error(
-                'Delete group error:',
-                error.response?.data || error.message,
-              );
+              console.error('Delete group error:', error.response?.data || error.message);
               let errorMessage = 'Failed to delete group';
               if (error.response) {
                 if (error.response.status === 403) {
@@ -231,7 +213,7 @@ const EditGroup = ({navigation, route}) => {
     );
   };
 
-  const renderMember = ({item}) => (
+  const renderMember = ({ item }) => (
     <View style={styles.memberRow}>
       <View style={styles.memberAvatar}>
         <Text style={styles.memberInitial}>
@@ -245,7 +227,8 @@ const EditGroup = ({navigation, route}) => {
       <TouchableOpacity
         onPress={() => removeMember(item.id)}
         style={styles.removeButton}
-        activeOpacity={0.7}>
+        activeOpacity={0.7}
+      >
         <View style={styles.removeButtonCircle}>
           <Ionicons name="close" size={16} color={colors.white} />
         </View>
@@ -253,11 +236,12 @@ const EditGroup = ({navigation, route}) => {
     </View>
   );
 
-  const renderSearchResult = ({item}) => (
+  const renderSearchResult = ({ item }) => (
     <TouchableOpacity
       style={styles.searchResult}
       onPress={() => addMember(item)}
-      activeOpacity={0.7}>
+      activeOpacity={0.7}
+    >
       <View style={styles.searchResultAvatar}>
         <Text style={styles.searchResultInitial}>
           {item.name?.charAt(0).toUpperCase() || '?'}
@@ -309,7 +293,8 @@ const EditGroup = ({navigation, route}) => {
                   groupType === type && styles.typeButtonSelected,
                 ]}
                 onPress={() => setGroupType(type)}
-                activeOpacity={0.7}>
+                activeOpacity={0.7}
+              >
                 <Ionicons
                   name={
                     type === 'Trip'
@@ -321,16 +306,15 @@ const EditGroup = ({navigation, route}) => {
                       : 'options'
                   }
                   size={18}
-                  color={
-                    groupType === type ? colors.white : colors.primaryGreen
-                  }
+                  color={groupType === type ? colors.white : colors.primaryGreen}
                   style={styles.typeIcon}
                 />
                 <Text
                   style={[
                     styles.typeButtonText,
                     groupType === type && styles.typeButtonTextSelected,
-                  ]}>
+                  ]}
+                >
                   {type}
                 </Text>
               </TouchableOpacity>
@@ -378,9 +362,7 @@ const EditGroup = ({navigation, route}) => {
                 keyExtractor={item => item.id}
                 style={styles.searchResultsList}
                 scrollEnabled={true}
-                ItemSeparatorComponent={() => (
-                  <View style={styles.resultSeparator} />
-                )}
+                ItemSeparatorComponent={() => <View style={styles.resultSeparator} />}
               />
             </View>
           )}
@@ -411,9 +393,7 @@ const EditGroup = ({navigation, route}) => {
               keyExtractor={item => String(item.id)}
               style={styles.membersList}
               scrollEnabled={true}
-              ItemSeparatorComponent={() => (
-                <View style={styles.memberSeparator} />
-              )}
+              ItemSeparatorComponent={() => <View style={styles.memberSeparator} />}
             />
           ) : (
             <View style={styles.emptyMembers}>
@@ -438,12 +418,14 @@ const EditGroup = ({navigation, route}) => {
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardAvoidingView}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}>
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 100 : 0}
+      >
         <View style={styles.header}>
           <TouchableOpacity
             onPress={() => navigation.goBack()}
             style={styles.backButton}
-            activeOpacity={0.7}>
+            activeOpacity={0.7}
+          >
             <Ionicons name="arrow-back" size={24} color={colors.primaryGreen} />
           </TouchableOpacity>
           <Text style={styles.headerTitle}>Edit Group</Text>
@@ -456,7 +438,7 @@ const EditGroup = ({navigation, route}) => {
           style={styles.container}
           contentContainerStyle={styles.contentContainer}
           showsVerticalScrollIndicator={false}
-          ListFooterComponent={<View style={{height: 100}} />}
+          ListFooterComponent={<View style={{ height: 100 }} />}
         />
 
         <View style={styles.bottomBar}>
@@ -465,7 +447,8 @@ const EditGroup = ({navigation, route}) => {
               style={[styles.deleteButton, saving && styles.buttonDisabled]}
               onPress={handleDelete}
               disabled={saving}
-              activeOpacity={0.7}>
+              activeOpacity={0.7}
+            >
               {saving ? (
                 <ActivityIndicator size="small" color={colors.white} />
               ) : (
@@ -485,7 +468,8 @@ const EditGroup = ({navigation, route}) => {
               style={[styles.saveButton, saving && styles.buttonDisabled]}
               onPress={handleSave}
               disabled={saving}
-              activeOpacity={0.7}>
+              activeOpacity={0.7}
+            >
               {saving ? (
                 <ActivityIndicator size="small" color={colors.white} />
               ) : (
@@ -532,7 +516,7 @@ const styles = StyleSheet.create({
     borderBottomColor: 'rgba(0,0,0,0.05)',
     elevation: 2,
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 1},
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
     shadowRadius: 2,
   },
@@ -558,7 +542,7 @@ const styles = StyleSheet.create({
     padding: 16,
     marginBottom: 16,
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 8,
     elevation: 2,
@@ -821,7 +805,7 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: 'rgba(0,0,0,0.05)',
     shadowColor: '#000',
-    shadowOffset: {width: 0, height: -2},
+    shadowOffset: { width: 0, height: -2 },
     shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 4,
@@ -840,7 +824,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: 'rgba(0,0,0,0.3)',
-    shadowOffset: {width: 0, height: 2},
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,
@@ -854,7 +838,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: 'rgba(0,0,0,0.3)',
-    shadowOffset: {width: 0, height: 2},
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 2,

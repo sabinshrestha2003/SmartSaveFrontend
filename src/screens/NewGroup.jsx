@@ -231,7 +231,7 @@ const NewGroup = ({ navigation, route }) => {
             screen: 'GroupDetails',
             params: { groupId: newGroup.id, groupName: newGroup.name },
           },
-          memberId // Target notification to each member
+          memberId
         );
       }
 
@@ -258,7 +258,7 @@ const NewGroup = ({ navigation, route }) => {
           {
             text: 'OK',
             onPress: () => {
-              navigation.navigate('BillSplittingDashboard', { groupCreated: true });
+              navigation.navigate('Tabs', { screen: 'BillSplittingDashboard', params: { groupCreated: true } });
             },
           },
         ]);
