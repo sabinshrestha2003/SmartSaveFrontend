@@ -1,11 +1,21 @@
 import React from 'react';
-import { createStackNavigator } from '@react-navigation/stack';
-import { useAuth } from '../context/AuthContext';
-import HomeScreen from '../screens/HomeScreen';
+import {createStackNavigator} from '@react-navigation/stack';
+import {useAuth} from '../context/AuthContext';
+import {ActivityIndicator, View} from 'react-native';
+import colors from '../styles/colors';
+
+// Auth screens
 import LoginScreen from '../screens/LoginScreen';
 import SignupScreen from '../screens/SignupScreen';
 import ForgotPasswordScreen from '../screens/ForgotPasswordScreen';
+
+// Onboarding logic
+import OnboardingScreen from '../screens/OnboardingScreen';
+import InitialScreen from '../screens/InitialScreen';
+
+// Main app screens
 import TabNavigator from './TabNavigator';
+import HomeScreen from '../screens/HomeScreen';
 import AddTransactionScreen from '../screens/AddTransactionScreen';
 import TransactionDetailsScreen from '../screens/TransactionDetailsScreen';
 import EditTransactionScreen from '../screens/EditTransactionScreen';
@@ -32,13 +42,11 @@ import CollectUp from '../screens/CollectUp';
 import EditSplit from '../screens/EditSplit';
 import Notifications from '../screens/Notifications';
 import ChangePasswordScreen from '../screens/ChangePasswordScreen';
-import { ActivityIndicator, View } from 'react-native';
-import colors from '../styles/colors';
 
 const Stack = createStackNavigator();
 
 const AppNavigator = () => {
-  const { user, loading } = useAuth();
+  const {user, loading} = useAuth();
 
   if (loading) {
     return (
@@ -48,19 +56,21 @@ const AppNavigator = () => {
           justifyContent: 'center',
           alignItems: 'center',
           backgroundColor: colors.background,
-        }}
-      >
+        }}>
         <ActivityIndicator size="large" color={colors.accentPurple} />
       </View>
     );
   }
 
   return (
-    <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <Stack.Navigator screenOptions={{headerShown: false}}>
       {user ? (
         <>
           <Stack.Screen name="Tabs" component={TabNavigator} />
-          <Stack.Screen name="AddTransaction" component={AddTransactionScreen} />
+          <Stack.Screen
+            name="AddTransaction"
+            component={AddTransactionScreen}
+          />
           <Stack.Screen
             name="TransactionDetail"
             component={TransactionDetailsScreen}
@@ -81,10 +91,7 @@ const AppNavigator = () => {
             name="IncomeBreakdown"
             component={IncomeBreakdownScreen}
           />
-          <Stack.Screen
-            name="SavingsTrends"
-            component={SavingsTrendsScreen}
-          />
+          <Stack.Screen name="SavingsTrends" component={SavingsTrendsScreen} />
           <Stack.Screen
             name="MonthlySummary"
             component={MonthlySummaryScreen}
@@ -110,13 +117,21 @@ const AppNavigator = () => {
           <Stack.Screen name="SettleUp" component={SettleUp} />
           <Stack.Screen name="CollectUp" component={CollectUp} />
           <Stack.Screen name="EditSplit" component={EditSplit} />
-          <Stack.Screen name="ChangePassword" component={ChangePasswordScreen} />
+          <Stack.Screen
+            name="ChangePassword"
+            component={ChangePasswordScreen}
+          />
         </>
       ) : (
         <>
+          <Stack.Screen name="Initial" component={InitialScreen} />
+          <Stack.Screen name="Onboarding" component={OnboardingScreen} />
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="Signup" component={SignupScreen} />
-          <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
+          <Stack.Screen
+            name="ForgotPassword"
+            component={ForgotPasswordScreen}
+          />
         </>
       )}
     </Stack.Navigator>

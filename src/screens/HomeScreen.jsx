@@ -10,6 +10,9 @@ import {
   SafeAreaView,
   Animated,
   Easing,
+  Modal,
+  TextInput,
+  Alert,
 } from 'react-native';
 import Svg, {
   Circle,
@@ -32,11 +35,13 @@ const HomeScreen = ({ navigation }) => {
   const [userName, setUserName] = useState('User');
   const [savingsGoals, setSavingsGoals] = useState([]);
   const [monthlyExpense, setMonthlyExpense] = useState(0);
-  const [monthlyBudget, setMonthlyBudget] = useState(2000);
+  const [monthlyBudget, setMonthlyBudget] = useState(4000); // Updated to $4,000
   const [expenseLoading, setExpenseLoading] = useState(false);
   const { transactions, loading, error, fetchTransactions } = useTransaction();
   const [scrollDirection, setScrollDirection] = useState('up');
   const [unreadCount, setUnreadCount] = useState(0);
+  const [isBudgetModalVisible, setBudgetModalVisible] = useState(false);
+  const [budgetInput, setBudgetInput] = useState('');
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
@@ -53,6 +58,10 @@ const HomeScreen = ({ navigation }) => {
       const response = await api.get('/user');
       if (response.data.success) {
         setUserName(response.data.user.name.split(' ')[0]);
+        // Check for budget in user data (if supported by backend)
+        if (response.data.user.budget) {
+          setMonthlyBudget(parseFloat(response.data.user.budget));
+        }
       }
     } catch (err) {
       console.error('Error fetching user details:', err.message);
@@ -110,6 +119,26 @@ const HomeScreen = ({ navigation }) => {
       setUnreadCount(unread);
     } catch (error) {
       console.error('Update unread count error:', error);
+    }
+  };
+
+  const handleSetBudget = async () => {
+    const budgetValue = parseFloat(budgetInput);
+    if (isNaN(budgetValue) || budgetValue <= 0) {
+      Alert.alert('Invalid Input', 'Please enter a valid positive number.');
+      return;
+    }
+
+    try {
+      // Update backend (if supported)
+      await api.put('/user', { budget: budgetValue });
+      setMonthlyBudget(budgetValue);
+      setBudgetModalVisible(false);
+      setBudgetInput('');
+      Alert.alert('Success', 'Monthly budget updated!');
+    } catch (err) {
+      console.error('Error updating budget:', err.message);
+      Alert.alert('Error', 'Failed to update budget. Please try again.');
     }
   };
 
@@ -364,11 +393,19 @@ const HomeScreen = ({ navigation }) => {
               >
                 <View style={styles.cardHeader}>
                   <Text style={styles.cardTitle}>Monthly Expense</Text>
-                  <Ionicons
-                    name="chevron-forward"
-                    size={20}
-                    color={colors.white}
-                  />
+                  <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                    <TouchableOpacity
+                      onPress={() => setBudgetModalVisible(true)}
+                      style={styles.editBudgetButton}
+                    >
+                      <Ionicons name="pencil" size={18} color={colors.white} />
+                    </TouchableOpacity>
+                    <Ionicons
+                      name="chevron-forward"
+                      size={20}
+                      color={colors.white}
+                    />
+                  </View>
                 </View>
                 {expenseLoading ? (
                   <ActivityIndicator size="small" color={colors.white} />
@@ -633,6 +670,56 @@ const HomeScreen = ({ navigation }) => {
           </LinearGradient>
         </TouchableOpacity>
       </Animated.View>
+      <Modal
+        visible={isBudgetModalVisible}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setBudgetModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHandle} />
+            <Text style={styles.modalTitle}>Set Monthly Budget</Text>
+            <Text style={styles.modalSubtitle}>
+              Enter your monthly budget amount
+            </Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Enter amount (e.g., 4000)"
+              placeholderTextColor={colors.mediumGray}
+              keyboardType="numeric"
+              value={budgetInput}
+              onChangeText={setBudgetInput}
+              autoFocus
+            />
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => {
+                  setBudgetModalVisible(false);
+                  setBudgetInput('');
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.saveButton, { opacity: budgetInput ? 1 : 0.5 }]}
+                onPress={handleSetBudget}
+                disabled={!budgetInput}
+              >
+                <LinearGradient
+                  colors={[colors.primaryGreen, colors.primaryGreenDark]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.saveButtonGradient}
+                >
+                  <Text style={styles.saveButtonText}>Save</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 };
@@ -694,13 +781,6 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: colors.matteBlack,
   },
-  profileGradient: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   summaryCard: {
     borderRadius: 20,
     marginBottom: 16,
@@ -735,6 +815,10 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: colors.white,
+  },
+  editBudgetButton: {
+    marginRight: 8,
+    padding: 4,
   },
   summaryAmount: {
     fontSize: 32,
@@ -891,6 +975,78 @@ const styles = StyleSheet.create({
     borderRadius: 30,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  modalContent: {
+    backgroundColor: colors.white,
+    padding: 24,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+  },
+  modalHandle: {
+    width: 40,
+    height: 5,
+    backgroundColor: colors.mediumGray,
+    borderRadius: 3,
+    alignSelf: 'center',
+    marginBottom: 20,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: colors.matteBlack,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    color: colors.darkGray,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  input: {
+    backgroundColor: colors.subtleAccent,
+    padding: 16,
+    borderRadius: 16,
+    color: colors.matteBlack,
+    fontSize: 16,
+    marginBottom: 16,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  cancelButton: {
+    flex: 1,
+    backgroundColor: colors.subtleAccent,
+    padding: 16,
+    borderRadius: 16,
+    alignItems: 'center',
+    marginRight: 8,
+  },
+  saveButton: {
+    flex: 1,
+    borderRadius: 16,
+    overflow: 'hidden',
+    marginLeft: 8,
+  },
+  saveButtonGradient: {
+    padding: 16,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    color: colors.darkGray,
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  saveButtonText: {
+    color: colors.white,
+    fontWeight: 'bold',
+    fontSize: 16,
   },
 });
 
