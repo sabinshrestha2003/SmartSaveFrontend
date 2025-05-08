@@ -66,7 +66,12 @@ export const BillSplittingProvider = ({ children }) => {
     };
   };
 
-  const validateGroup = async (groupId) => {
+  const validateGroup = async (groupId, skipValidation = false) => {
+    if (skipValidation) {
+      console.log(`Skipping validation for group ID: ${groupId} (assumed valid)`);
+      return { id: groupId };
+    }
+
     if (invalidGroups.has(String(groupId))) {
       console.log(`Skipping validation for known invalid group ID: ${groupId}`);
       return null;
@@ -80,24 +85,19 @@ export const BillSplittingProvider = ({ children }) => {
     } catch (err) {
       console.error(`Error validating group ${groupId}:`, err.response?.data || err.message);
       if (err.response?.status === 404) {
-        console.log(`Group ${groupId} not found, removing from state`);
+        console.log(`Group ${groupId} not found, marking as invalid`);
         setInvalidGroups(prev => {
           const updated = new Set(prev);
           updated.add(String(groupId));
           console.log(`Updated invalidGroups:`, Array.from(updated));
           return updated;
         });
-        setGroups(prev => {
-          const updatedGroups = prev.filter(g => String(g.id) !== String(groupId));
-          console.log(`Updated groups after removing ${groupId}:`, updatedGroups);
-          return updatedGroups;
-        });
       }
       return null;
     }
   };
 
-  const fetchBillSplittingData = async () => {
+  const fetchBillSplittingData = async (currentGroupId = null) => {
     if (!user || authLoading) {
       console.log('No user or auth loading, skipping fetchBillSplittingData');
       return;
@@ -137,14 +137,14 @@ export const BillSplittingProvider = ({ children }) => {
         }
       });
 
-      // Validate all groups to filter out invalid ones
       const validatedGroups = [];
       for (const group of groupsData) {
-        if (invalidGroups.has(String(group.id))) {
+        const skipValidation = currentGroupId && String(group.id) === String(currentGroupId);
+        if (invalidGroups.has(String(group.id)) && !skipValidation) {
           console.log(`Skipping validation for known invalid group ID: ${group.id}`);
           continue;
         }
-        const validatedGroup = await validateGroup(group.id);
+        const validatedGroup = await validateGroup(group.id, skipValidation);
         if (validatedGroup) {
           validatedGroups.push(validatedGroup);
         }
@@ -152,7 +152,11 @@ export const BillSplittingProvider = ({ children }) => {
       console.log('Validated groups before setting state:', validatedGroups);
 
       validatedGroups.sort((a, b) => Number(a.id) - Number(b.id));
-      setGroups(validatedGroups);
+      setGroups(prev => {
+        const updatedGroups = [...prev, ...validatedGroups.filter(g => !prev.some(pg => String(pg.id) === String(g.id)))];
+        console.log('Updated groups state:', updatedGroups);
+        return updatedGroups;
+      });
       setBillSplits(billSplitsData);
       setSettlements(settlementsData);
 
@@ -168,7 +172,6 @@ export const BillSplittingProvider = ({ children }) => {
     } catch (err) {
       console.error('Unexpected error in fetchBillSplittingData:', err);
       setError('Unable to load your expense data. Please try again later.');
-      setGroups([]);
       setBillSplits([]);
       setSettlements([]);
       setStats({ totalOwed: 0, totalOwing: 0, netBalance: 0 });
@@ -210,19 +213,15 @@ export const BillSplittingProvider = ({ children }) => {
     }
   }, [billSplits, user?.id, settlements]);
 
-  const refreshBillSplitting = async () => {
+  const refreshBillSplitting = async (currentGroupId = null) => {
     if (!user) {
       console.log('No user, skipping refreshBillSplitting');
-      return;
+      return Promise.resolve();
     }
-    console.log('Starting refreshBillSplitting, clearing stale state');
-    setGroups([]);
-    setBillSplits([]);
-    setSettlements([]);
-    setStats({ totalOwed: 0, totalOwing: 0, netBalance: 0 });
-    setInvalidGroups(new Set());
-    await fetchBillSplittingData();
-    console.log('Completed refreshBillSplitting');
+    console.log('Starting refreshBillSplitting, currentGroupId:', currentGroupId);
+    await fetchBillSplittingData(currentGroupId);
+    console.log('Completed refreshBillSplitting, groups:', groups);
+    return Promise.resolve();
   };
 
   const triggerNotification = async (title, body, data = {}, userId = null) => {

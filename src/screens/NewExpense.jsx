@@ -38,6 +38,8 @@ const NewExpense = ({ navigation, route }) => {
   const [loadingMembers, setLoadingMembers] = useState(true);
   const [error, setError] = useState(null);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [isSaved, setIsSaved] = useState(false);
+  const [savedGroupId, setSavedGroupId] = useState(null);
 
   const modalAnimation = useRef(new Animated.Value(0)).current;
 
@@ -84,23 +86,28 @@ const NewExpense = ({ navigation, route }) => {
   }, [fetchUserDetails]);
 
   const fetchGroupMembers = useCallback(async () => {
+    if (isSaved && savedGroupId) {
+      console.log('Skipping fetchGroupMembers: Expense saved, using savedGroupId:', savedGroupId);
+      return;
+    }
+
     if (!groupId) {
+      console.log('No groupId provided');
       setError('No group selected. Please select a group to add an expense.');
       setLoadingMembers(false);
       return;
     }
 
-    // Validate groupId against groups from context
-    console.log('Available groups:', groups);
-    console.log('Provided groupId:', groupId);
+    console.log('fetchGroupMembers - groupId:', groupId, 'groups:', groups);
     const groupExists = groups.some(g => String(g.id) === String(groupId));
     if (!groupExists) {
+      console.log(`Group ${groupId} not found in groups:`, groups);
       setError('The selected group does not exist. Please choose a valid group.');
       setLoadingMembers(false);
       Alert.alert(
         'Invalid Group',
         'The selected group does not exist. Returning to group selection.',
-        [{ text: 'OK', onPress: () => navigation.navigate('GroupSelection') }]
+        [{ text: 'OK', onPress: () => navigation.navigate('AllGroups') }]
       );
       return;
     }
@@ -111,6 +118,7 @@ const NewExpense = ({ navigation, route }) => {
     try {
       const groupResponse = await api.get(`/splits/groups/${groupId}`);
       const group = groupResponse.data.group;
+      console.log('Fetched group:', group);
 
       const memberIds = Array.isArray(group.members)
         ? group.members
@@ -150,12 +158,18 @@ const NewExpense = ({ navigation, route }) => {
     } finally {
       setLoadingMembers(false);
     }
-  }, [groupId, user, fetchUserDetails, groups, navigation]);
+  }, [groupId, user, fetchUserDetails, groups, navigation, isSaved, savedGroupId]);
 
   useEffect(() => {
     navigation.setOptions({ title: 'Add New Expense' });
-    fetchGroupMembers();
-  }, [fetchGroupMembers, navigation]);
+    if (!isSaved) {
+      fetchGroupMembers();
+    }
+    return () => {
+      setIsSaved(false);
+      setSavedGroupId(null);
+    };
+  }, [fetchGroupMembers, navigation, isSaved]);
 
   const calculateShares = useCallback((currentParticipants) => {
     const amount = parseFloat(totalAmount) || 0;
@@ -191,6 +205,12 @@ const NewExpense = ({ navigation, route }) => {
             split_method: 'percentage',
           };
         });
+
+        const totalOwed = updatedParticipants.reduce((sum, p) => sum + p.share_amount, 0);
+        const difference = amount - totalOwed;
+        if (Math.abs(difference) > 0.01 && updatedParticipants.length > 0) {
+          updatedParticipants[0].share_amount += Number(difference.toFixed(2));
+        }
       }
     }
 
@@ -205,14 +225,17 @@ const NewExpense = ({ navigation, route }) => {
     setSplitMethod(method);
     let updatedParticipants = [...participants];
     if (method === 'percentage') {
+      const equalPercentage = participants.length > 0 ? (100 / participants.length).toFixed(2) : 0;
       updatedParticipants = updatedParticipants.map(p => ({
         ...p,
-        split_value: 0,
+        split_value: Number(equalPercentage),
+        split_method: 'percentage',
       }));
     } else {
       updatedParticipants = updatedParticipants.map(p => ({
         ...p,
         split_value: 1,
+        split_method: method,
       }));
     }
     setParticipants(calculateShares(updatedParticipants));
@@ -282,6 +305,7 @@ const NewExpense = ({ navigation, route }) => {
         })),
       };
 
+      console.log('Saving expense with groupId:', groupId, 'Data:', expenseData);
       const response = await api.post('/splits/bill_splits', expenseData);
       const newExpenseId = response.data.bill_split?.id;
       const groupName = response.data.bill_split?.group_name || groups.find(g => String(g.id) === String(groupId))?.name || 'Unnamed Group';
@@ -296,10 +320,17 @@ const NewExpense = ({ navigation, route }) => {
         );
       }
 
-      await refreshBillSplitting();
-      Alert.alert('Success', 'Expense added successfully!', [
-        { text: 'OK', onPress: () => navigation.goBack() },
-      ]);
+      setIsSaved(true);
+      setSavedGroupId(groupId);
+      setError(null);
+      console.log('Navigating to GroupDetails with groupId:', groupId);
+      navigation.navigate('GroupDetails', { groupId });
+
+      // Refresh context in the background
+      console.log('Refreshing bill splitting data in background');
+      refreshBillSplitting(groupId).catch(err => {
+        console.error('Background refresh failed:', err);
+      });
     } catch (error) {
       console.error('Add expense error:', error.response?.data || error.message);
       Alert.alert('Error', error.response?.data?.error || 'Failed to add expense. Please try again.');
@@ -380,7 +411,7 @@ const NewExpense = ({ navigation, route }) => {
     );
   }
 
-  if (error) {
+  if (error && !isSaved) {
     return (
       <SafeAreaView style={styles.safeArea}>
         <StatusBar barStyle="dark-content" backgroundColor={colors.background} />
@@ -577,7 +608,6 @@ const NewExpense = ({ navigation, route }) => {
                       <Ionicons name="close" size={24} color={colors.text} />
                     </TouchableOpacity>
                   </View>
-
                   <FlatList
                     data={expenseCategories}
                     numColumns={3}
@@ -774,10 +804,12 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   participantHeaderText: {
+    flex: 1,
     fontSize: 14,
     fontWeight: '600',
     color: colors.textSecondary,
     fontFamily: 'Inter-SemiBold',
+    textAlign: 'center',
   },
   participantList: {
     backgroundColor: colors.background,
@@ -820,7 +852,7 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter-Regular',
   },
   amountInput: {
-    width: 80,
+    flex: 1,
     padding: 10,
     fontSize: 14,
     color: colors.textPrimary,
@@ -831,14 +863,16 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
     fontFamily: 'Inter-Regular',
     backgroundColor: colors.background,
+    maxWidth: 80,
   },
   shareText: {
-    width: 80,
+    flex: 1,
     fontSize: 14,
     color: colors.textPrimary,
     textAlign: 'right',
     fontFamily: 'Inter-Regular',
     fontWeight: '500',
+    maxWidth: 80,
   },
   bottomBar: {
     position: 'absolute',
