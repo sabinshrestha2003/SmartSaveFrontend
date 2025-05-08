@@ -39,7 +39,7 @@ const EditGroup = ({ navigation, route }) => {
     });
     if (!initialGroup) {
       Alert.alert('Error', 'No group data provided.', [
-        { text: 'OK', onPress: () => navigation.goBack() },
+        { text: 'OK', onPress: () => navigation.navigate('Tabs', { screen: 'BillSplitting' }) },
       ]);
     }
     return () => {
@@ -185,11 +185,11 @@ const EditGroup = ({ navigation, route }) => {
                 await triggerNotification(
                   'Group Deleted',
                   `The group "${initialGroup.name}" has been deleted.`,
-                  { screen: 'BillSplittingDashboard' },
+                  { screen: 'BillSplitting' },
                   member.id,
                 );
               }
-              navigation.navigate('Tabs', { screen: 'BillSplittingDashboard', params: { shouldRefresh: true } });
+              navigation.navigate('Tabs', { screen: 'BillSplitting', params: { shouldRefresh: true } });
               Alert.alert('Success', 'Group deleted successfully');
             } catch (error) {
               console.error('Delete group error:', error.response?.data || error.message);
@@ -422,7 +422,7 @@ const EditGroup = ({ navigation, route }) => {
       >
         <View style={styles.header}>
           <TouchableOpacity
-            onPress={() => navigation.goBack()}
+            onPress={() => navigation.navigate('GroupDetails', { groupId: initialGroup?.id, groupName: initialGroup?.name })}
             style={styles.backButton}
             activeOpacity={0.7}
           >

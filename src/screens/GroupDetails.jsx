@@ -143,14 +143,17 @@ const GroupDetails = ({ navigation, route }) => {
             onPress: () =>
               navigation.reset({
                 index: 0,
-                routes: [{ name: 'BillSplittingDashboard' }],
+                routes: [{ name: 'Tabs', params: { screen: 'BillSplitting' } }],
               }),
           },
         ]);
       } else if (error.response?.status === 403) {
         setError("You don't have access to this group.");
         Alert.alert('Error', "You don't have access to this group.", [
-          { text: 'OK', onPress: () => navigation.goBack() },
+          {
+            text: 'OK',
+            onPress: () => navigation.navigate('Tabs', { screen: 'BillSplitting' }),
+          },
         ]);
       } else {
         setError(
@@ -201,7 +204,7 @@ const GroupDetails = ({ navigation, route }) => {
           onPress: () =>
             navigation.reset({
               index: 0,
-              routes: [{ name: 'BillSplittingDashboard' }],
+              routes: [{ name: 'Tabs', params: { screen: 'BillSplitting' } }],
             }),
         },
       ]);
@@ -216,7 +219,10 @@ const GroupDetails = ({ navigation, route }) => {
       if (isMounted) {
         setError('No group or group ID provided.');
         Alert.alert('Error', 'No group or group ID provided.', [
-          { text: 'OK', onPress: () => navigation.goBack() },
+          {
+            text: 'OK',
+            onPress: () => navigation.navigate('Tabs', { screen: 'BillSplitting' }),
+          },
         ]);
       }
       return;
@@ -295,7 +301,7 @@ const GroupDetails = ({ navigation, route }) => {
           'This group no longer exists. Returning to dashboard.',
           [{
             text: 'OK',
-            onPress: () => navigation.navigate('BillSplittingDashboard'),
+            onPress: () => navigation.navigate('Tabs', { screen: 'BillSplitting' }),
           }],
         );
         return;
@@ -441,7 +447,7 @@ const GroupDetails = ({ navigation, route }) => {
           <Text style={styles.errorText}>{error || 'Group not found'}</Text>
           <TouchableOpacity
             style={styles.backButtonError}
-            onPress={() => navigation.navigate('BillSplittingDashboard')}
+            onPress={() => navigation.navigate('Tabs', { screen: 'BillSplitting' })}
           >
             <Text style={styles.backButtonText}>Back to Dashboard</Text>
           </TouchableOpacity>
@@ -467,7 +473,7 @@ const GroupDetails = ({ navigation, route }) => {
       >
         <Animated.View style={[styles.header, { opacity: fadeAnim }]}>
           <TouchableOpacity
-            onPress={() => navigation.goBack()}
+            onPress={() => navigation.navigate('Tabs', { screen: 'BillSplitting' })}
             style={styles.backButton}
           >
             <Ionicons name="arrow-back" size={24} color={colors.primaryGreen} />
@@ -536,14 +542,12 @@ const GroupDetails = ({ navigation, route }) => {
             styles.section,
             {
               opacity: fadeAnim,
-              transform: [
-                {
-                  translateY: fadeAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [30, 0],
-                  }),
-                },
-              ],
+              transform: [{
+                translateY: fadeAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [30, 0],
+                }),
+              }],
             },
           ]}
         >
@@ -579,14 +583,12 @@ const GroupDetails = ({ navigation, route }) => {
             styles.section,
             {
               opacity: fadeAnim,
-              transform: [
-                {
-                  translateY: fadeAnim.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [40, 0],
-                  }),
-                },
-              ],
+              transform: [{
+                translateY: fadeAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [40, 0],
+                }),
+              }],
             },
           ]}
         >

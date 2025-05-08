@@ -258,7 +258,11 @@ const NewGroup = ({ navigation, route }) => {
           {
             text: 'OK',
             onPress: () => {
-              navigation.navigate('Tabs', { screen: 'BillSplittingDashboard', params: { groupCreated: true } });
+              navigation.navigate('GroupDetails', {
+                groupId: String(newGroup.id),
+                groupName: newGroup.name,
+                group: newGroup,
+              });
             },
           },
         ]);
